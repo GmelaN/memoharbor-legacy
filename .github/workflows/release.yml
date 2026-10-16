@@ -41,8 +41,8 @@ jobs:
           url=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.8.8/apache-maven-3.8.8-bin.tar.gz
           cd "$RUNNER_TEMP"
           curl --fail --location "$url" -o maven.tar.gz
-          curl --fail --location "$url.sha512" -o maven.sha512
-          printf '%s  maven.tar.gz\n' "$(cat maven.sha512)" | sha512sum --check -
+          checksum=332088670d14fa9ff346e6858ca0acca304666596fec86eea89253bd496d3c90deae2be5091be199f48e09d46cec817c6419d5161fb4ee37871503f472765d00
+          printf '%s  maven.tar.gz\n' "$checksum" | sha512sum --check -
           tar -xzf maven.tar.gz
           echo "$RUNNER_TEMP/apache-maven-3.8.8/bin" >> "$GITHUB_PATH"
       - name: Compile, test and verify Java 7 APIs
