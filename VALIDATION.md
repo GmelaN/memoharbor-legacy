@@ -31,7 +31,23 @@
 `60fbd0e64c9cc640c06d45c2b2b83d1075f14c667c16eba2442ea35bed9638d8`
 
 WAR의 빌드 도구·ZIP timestamp에 따라 다른 환경의 결과 해시는 달라질 수 있습니다.
-CI 결과와 로컬 실행 결과는 구분합니다. 이 기록 자체는 GitHub Actions가 실행 완료되었다는 주장이 아닙니다.
+CI 결과와 로컬 실행 결과는 구분합니다.
+
+## GitHub Actions 실제 결과
+
+[검증 실행 38889774022](https://github.com/GmelaN/memoharbor-legacy/actions/runs/38889774022)의 build job이 성공했습니다.
+검증한 코드 커밋은 `e38afcbd360af2db1865ab253418034997667217`이며 이후 변경은 이 검증 기록뿐입니다.
+
+- Ubuntu 24.04.5 x64, Azul Zulu Java 7.0.352+1, Maven 3.8.8.
+- 실제 MariaDB 컨테이너 11.4.13, Connector/J 1.8.0.
+- Surefire 11개 및 패키징 WAR Failsafe 1개 테스트가 실패·오류·skip 없이 통과했습니다.
+- Linux x64 SQLite native library 로딩과 재시작 보존도 통과했습니다.
+- Java 7 API 검사 및 WAR 전체 483개 class 바이트코드 검사가 통과했습니다.
+- memoharbor-legacy-war artifact 업로드가 완료되었습니다.
+- Release job은 태그 이벤트가 아니므로 의도적으로 건너뛰었습니다. 이미지 발행이나 OpenShift 배포는 실행하지 않았습니다.
+
+최초 CI에서 Maven Central의 존재하지 않는 .sha512 파일 URL이 실패했습니다.
+Apache 공식 배포 사이트의 SHA-512와 대조한 고정 해시로 수정한 뒤 위 실행이 성공했습니다.
 
 ## 수행하지 못한 검증
 
@@ -40,7 +56,7 @@ CI 결과와 로컬 실행 결과는 구분합니다. 이 기록 자체는 GitHu
 - OpenShift 접속 정보와 oc가 없어 4.15.10 server-side dry-run, SCC admission, Route, Secret, rollout, 클러스터 통신·스토리지·장애 동작을 확인하지 않았습니다.
 - OpenShift YAML 검증은 문법 및 수동 구조 검토입니다. Kubernetes/OpenShift 서버 스키마 검증을 통과했다는 뜻이 아닙니다.
 - Bash 실행이 로컬 Windows의 signal-pipe 권한 오류로 막혀 EAP·컨테이너 shell 스크립트는 읽기 검토만 했습니다. 실행 성공을 주장하지 않습니다.
-- 최초 Java 1.7.0 또는 다른 Java 7 update/vendor, Linux native SQLite, 실제 운영 DB 버전·인증 방식·TLS는 검증하지 않았습니다.
+- 최초 Java 1.7.0 또는 다른 Java 7 update/vendor, 검증한 Windows/Linux x64 이외의 SQLite native 플랫폼, 실제 운영 DB 버전·인증 방식·TLS는 검증하지 않았습니다.
 - 전체 보안 취약점 감사, 부하 테스트, APM agent, 세션 복제, 백업 복구 및 SQLite→MariaDB 데이터 이전은 수행하지 않았습니다.
 
 Tomcat의 패키징 WAR 종료 로그에는 원본 JDBC 드라이버 등록을 컨테이너가 강제 해제했다는 경고가 있습니다.
