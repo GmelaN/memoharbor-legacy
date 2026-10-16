@@ -2,18 +2,22 @@ package lab.webapp;
 
 import org.apache.catalina.Context;
 import org.apache.catalina.startup.Tomcat;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.Test;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 import java.nio.file.*;
 import java.net.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.regex.*;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.Assert.*;
 
-class AppIntegrationTest {
-    @TempDir Path directory;
+public class AppIntegrationTest {
+    @Rule public TemporaryFolder temporary = new TemporaryFolder();
+    private Path directory;
+    @Before public void prepareDirectory() { directory = temporary.getRoot().toPath(); }
     private Tomcat tomcat;
     private int port;
     private Path web;
@@ -25,7 +29,7 @@ class AppIntegrationTest {
         context = tomcat.addContext("/memoharbor", web.toString());
         context.setUseHttpOnly(true);
         Tomcat.addServlet(context, "app", new AppServlet()).setLoadOnStartup(1);
-        context.addServletMappingDecoded("/", "app");
+        context.addServletMapping("/", "app");
         tomcat.start(); port = tomcat.getConnector().getLocalPort();
     }
     private void stop() throws Exception { tomcat.stop(); tomcat.destroy(); }
@@ -40,7 +44,7 @@ class AppIntegrationTest {
                 try (OutputStream stream = c.getOutputStream()) { stream.write(body.getBytes(StandardCharsets.UTF_8)); }
             }
             try {
-                assertEquals(expected, c.getResponseCode(), method + " " + path);
+                assertEquals(method + " " + path, expected, c.getResponseCode());
                 String set = c.getHeaderField("Set-Cookie");
                 if (set != null) { assertTrue(set.toLowerCase().contains("httponly")); cookie = set.split(";")[0]; }
                 InputStream source = expected >= 400 ? c.getErrorStream() : c.getInputStream();
@@ -61,7 +65,7 @@ class AppIntegrationTest {
             assertNotEquals(old, cookie); call("GET", "/", null, 200);
         }
     }
-    @Test void sessionsIsolateUsersAndPersistDataAcrossRestart() throws Exception {
+    @Test public void sessionsIsolateUsersAndPersistDataAcrossRestart() throws Exception {
         start();
         Client alice = new Client(), bob = new Client(), guest = new Client();
         try {

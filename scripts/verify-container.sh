@@ -19,7 +19,7 @@ chmod 444 "$config_file"
 docker run --detach --name "$container_name" --network host \
   --user 1001230000:0 --cap-drop ALL --security-opt no-new-privileges \
   --mount "type=bind,source=$config_file,target=/etc/memoharbor/.env,readonly" \
-  --env 'JAVA_OPTS=-Xms128m -Xmx512m -Dmemoharbor.env=/etc/memoharbor/.env' "$1"
+  --env 'JAVA_OPTS=-Xms128m -Xmx512m -XX:MaxPermSize=192m -Dmemoharbor.env=/etc/memoharbor/.env' "$1"
 wait_ready() {
   for attempt in {1..90}; do
     if curl --fail --silent http://127.0.0.1:8080/memoharbor/health >/dev/null; then return; fi

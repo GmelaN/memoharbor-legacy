@@ -2,14 +2,14 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: github-deployer
-  namespace: memoharbor
+  namespace: memoharbor-legacy
 automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: memoharbor-deployer
-  namespace: memoharbor
+  namespace: memoharbor-legacy
 rules:
   - apiGroups: [apps]
     resources: [deployments]
@@ -20,11 +20,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: memoharbor-deployer
-  namespace: memoharbor
+  namespace: memoharbor-legacy
 subjects:
   - kind: ServiceAccount
     name: github-deployer
-    namespace: memoharbor
+    namespace: memoharbor-legacy
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

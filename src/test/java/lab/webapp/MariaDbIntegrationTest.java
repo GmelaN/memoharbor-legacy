@@ -3,19 +3,23 @@ package lab.webapp;
 import org.apache.catalina.Context;
 import org.apache.catalina.Wrapper;
 import org.apache.catalina.startup.Tomcat;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.Test;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
 import java.net.*;
 import java.io.*;
 import java.util.UUID;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.api.Assumptions.*;
+import static org.junit.Assert.*;
+import static org.junit.Assume.*;
 
 /** CI provisions a real MariaDB; no embedded database substitutes for this test. */
-class MariaDbIntegrationTest {
-    @TempDir Path root;
+public class MariaDbIntegrationTest {
+    @Rule public TemporaryFolder temporary = new TemporaryFolder();
+    private Path root;
+    @Before public void prepareDirectory() { root = temporary.getRoot().toPath(); }
 
     private final class Replica implements AutoCloseable {
         private final Tomcat server;
@@ -29,10 +33,11 @@ class MariaDbIntegrationTest {
                 + "\nDB_PASSWORD='" + System.getenv("MARIADB_TEST_PASSWORD") + "'\n").getBytes(StandardCharsets.UTF_8));
             server = new Tomcat(); server.setBaseDir(root.resolve(name + "-server").toString());
             server.setPort(0); server.getConnector();
+            server.getEngine().setName("Tomcat-" + name);
             Context context = server.addContext("/memoharbor", web.toString());
             Wrapper servlet = Tomcat.addServlet(context, "app", new AppServlet());
             servlet.setLoadOnStartup(1); servlet.addInitParameter("envFile", env.toString());
-            context.addServletMappingDecoded("/", "app");
+            context.addServletMapping("/", "app");
             server.start(); port = server.getConnector().getLocalPort();
         }
         String call(String path, String body, int expected) throws Exception {
@@ -66,8 +71,8 @@ class MariaDbIntegrationTest {
         public void close() throws Exception { server.stop(); server.destroy(); }
     }
 
-    @Test void twoTomcatsShareMariaDbAndSurviveRestart() throws Exception {
-        assumeTrue(System.getenv("MARIADB_TEST_URL") != null, "Set MARIADB_TEST_* to run the real MariaDB test");
+    @Test public void twoTomcatsShareMariaDbAndSurviveRestart() throws Exception {
+        assumeTrue("Set MARIADB_TEST_* to run the real MariaDB test", System.getenv("MARIADB_TEST_URL") != null);
         String username = "u" + UUID.randomUUID().toString().replace("-", "");
         String marker = "replica-" + UUID.randomUUID();
         try (Replica first = new Replica("first"); Replica second = new Replica("second")) {

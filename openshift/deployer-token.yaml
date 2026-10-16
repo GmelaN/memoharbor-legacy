@@ -3,7 +3,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: github-deployer-token
-  namespace: memoharbor
+  namespace: memoharbor-legacy
   annotations:
     kubernetes.io/service-account.name: github-deployer
 type: kubernetes.io/service-account-token

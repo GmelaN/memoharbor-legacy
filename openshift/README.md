@@ -1,162 +1,142 @@
-# OKD 자동 배포 — MemoHarbor
+# OpenShift Container Platform 4.15.10 — MemoHarbor Legacy
 
-대상: OKD `4.22.0-okd-scos.9`, 프로젝트 `memoharbor`, MariaDB.
-GitOps 없이 GitHub Actions가 검증된 이미지 digest로 Deployment를 갱신합니다.
+이 디렉터리는 OpenShift **4.15.10**용 Deployment, Service, edge TLS Route,
+ServiceAccount와 선택적 배포 RBAC를 제공합니다.
+apps/v1, v1, route.openshift.io/v1, rbac.authorization.k8s.io/v1 API를 사용합니다.
+클러스터 실접속 검증 전이며 EAP 6.4/Java 7 조합의 Red Hat 인증을 뜻하지 않습니다.
 
-```text
-main push → WAR 테스트 → WildFly 이미지 빌드 → 실제 컨테이너/MariaDB 테스트
-          → GHCR 업로드 → 사설망 self-hosted runner → OKD rolling update
-```
+## 1. EAP 기본 이미지 준비
 
-이미지는 `quay.io/wildfly/wildfly:41.0.1.Final-jdk21` 기반입니다. 앱은 Java 17 바이트코드로 빌드되어 JDK 21에서도 실행됩니다.
-기존 WildFly 27 호환 테스트에 더해 CI가 실제 배포 이미지에서 임의 UID 및 MariaDB를 검사합니다.
-컨테이너/클러스터 노드는 현재 `linux/amd64`를 기준으로 합니다.
+조직이 사용 권한을 가진 **EAP 6.4 + Java 7** Linux 이미지를 준비하십시오.
+기본 이미지는 다음 계약을 만족해야 합니다.
 
-## 1. 사설망 Linux runner 준비
+- EAP 설치 위치 /opt/eap, JAVA_HOME 설정, Java 7 실행 파일.
+- /opt/eap/bin/standalone.sh, standalone.xml 및 기본 HTTP 8080 커넥터.
+- EAP 모듈과 스크립트는 임의 UID가 읽고 실행 가능.
+- standalone.conf가 외부 JAVA_OPTS를 유지하고 필요한 모듈 옵션을 제공.
+- 초기 DB 설정은 없고 관리 인터페이스는 loopback에 바인딩.
+- 인증·라이선스·지원 패치·OS/CPU·glibc를 조직에서 관리.
 
-GitHub 저장소 Settings → Actions → Runners → New self-hosted runner에서 Linux x64 runner를 등록합니다.
-클러스터 API와 GitHub에 접근 가능한 VM에 서비스로 설치하고 `okd-memoharbor` 라벨을 추가하십시오.
-이 runner는 `main` 배포 job만 실행합니다. PR 빌드/테스트는 GitHub-hosted runner에서 실행합니다.
-
-runner 실행 계정에 `git`, `bash`, `oc`를 설치하십시오. `oc`는 OKD 콘솔의 Command Line Tools에서 클러스터에 맞는 Linux 버전을 받습니다.
-배포 runner에는 Docker나 MariaDB 비밀번호가 필요하지 않습니다.
-OKD 노드는 GHCR 이미지에 접근할 수 있어야 합니다. MariaDB 연결도 Pod 네트워크에서 허용되어야 합니다.
-
-## 2. 프로젝트와 DB Secret 생성 (관리자 PC/VM에서 1회)
-
-먼저 `oc login`으로 로그인하고 프로젝트를 선택하거나 생성합니다.
+Dockerfile은 기본 이미지의 Java 7 버전을 확인하고 standalone 쓰기 영역을 root 그룹에 허용합니다.
+임의 UID는 OpenShift에서 할당하며 YAML에 UID·fsGroup 고정값을 넣지 않습니다.
+기본 이미지에 JVM 옵션이나 에이전트를 넣었다면 JAVA_OPTS와 충돌하지 않는지 확인하십시오.
 
 ```sh
-oc project memoharbor || oc new-project memoharbor
+docker build --build-arg EAP64_JAVA7_IMAGE=YOUR_REGISTRY/eap64-java7@sha256:YOUR_DIGEST -t YOUR_REGISTRY/memoharbor-legacy:validated .
 ```
 
-MariaDB에 `memoharbor` DB와 앱 계정을 준비합니다. 기존 README의 관리자 SQL을 참고하십시오.
-관리자 컴퓨터의 Git 저장소 밖에 UTF-8 `.env` 파일을 만들고 실제 값을 입력합니다.
+없는 공개 EAP 이미지를 가정하지 않도록 기본 이미지 인수는 필수입니다.
+현재 Dockerfile을 실제 빌드한 것은 아닙니다. Java 7과 EAP 패치 수준은 기본 이미지 운영자가 검증해야 합니다.
+컨테이너는 SIGTERM을 전달하는 기본 이미지의 standalone.sh 동작을 전제로 합니다.
 
-```dotenv
-DB_URL=jdbc:mariadb://YOUR_DB_HOST:3306/memoharbor
-DB_USER=memoharbor
-DB_PASSWORD='YOUR_DB_PASSWORD'
-```
+## 2. 이미지 검증
 
-아래 명령의 경로를 해당 파일 경로로 바꿉니다. `--from-file`을 사용하여 `.env` 전체를 Secret의 `.env` 키에 저장합니다.
-`--from-env-file`은 앱이 필요한 파일 구조와 다르므로 사용하지 않습니다.
+전용 Linux Docker 호스트에서 실제 MariaDB 테스트 DB를 준비하고 다음을 실행하십시오.
 
 ```sh
-oc -n memoharbor create secret generic memoharbor-db \
-  --from-file=.env=/secure/memoharbor/.env \
-  --dry-run=client -o yaml | oc apply -f -
+export MARIADB_TEST_URL=jdbc:mariadb://127.0.0.1:3306/test
+export MARIADB_TEST_USER=test
+export MARIADB_TEST_PASSWORD=your-test-password
+bash scripts/verify-container.sh YOUR_REGISTRY/memoharbor-legacy:validated
 ```
 
-Pod에서 `/etc/memoharbor/.env`로 읽기 전용 마운트합니다.
-JVM에는 `-Dmemoharbor.env=/etc/memoharbor/.env`를 전달합니다.
-Secret이 없으면 Pod가 시작되지 않고, DB 연결이 실패하면 readiness를 통과하지 않습니다. SQLite로 자동 전환하지 않습니다.
-DB 비밀번호는 GitHub Secrets, 이미지, Git에 넣지 않습니다.
+이 스크립트는 임의 UID 1001230000:0, capability 제거, no-new-privileges로 실행하고
+MariaDB 로그인·데이터·컨테이너 재시작을 검사합니다.
+Linux host network를 사용하므로 Docker Desktop 네트워크와 동일하지 않습니다.
+통과 후 이미지를 조직 레지스트리에 push하고 immutable digest를 확보하십시오.
+EAP 기본 이미지 배포·라이선스 조건에 맞게 접근 권한을 설정합니다.
 
-## 3. GHCR 읽기 권한 설정
-
-`main`에 push하면 기존 WAR 검증 후 `ghcr.io/gmelan/memoharbor:sha-<commit>`과 `:main`을 발행합니다.
-GitHub Actions는 자동 제공되는 `GITHUB_TOKEN`으로 업로드합니다 (`packages: write`).
-기존 GHCR 패키지가 별도로 생성되어 있다면 패키지 설정에서 이 저장소의 Actions 쓰기 권한을 확인하십시오.
-
-GHCR 패키지는 기본적으로 비공개일 수 있으므로, 아래 예시는 `read:packages` 권한의 전용 GitHub PAT으로 pull Secret을 생성합니다.
-토큰은 신뢰할 수 있는 관리자 터미널에서 입력합니다. 다음은 Bash 예시입니다.
+## 3. 네임스페이스와 비밀 설정
 
 ```sh
-read -r -p 'GitHub user: ' GHCR_USER
-read -r -s -p 'GHCR read token: ' GHCR_TOKEN; printf '\n'
-oc -n memoharbor create secret docker-registry ghcr-pull \
-  --docker-server=ghcr.io --docker-username="$GHCR_USER" \
-  --docker-password="$GHCR_TOKEN" --dry-run=client -o yaml | oc apply -f -
-unset GHCR_TOKEN
+oc project memoharbor-legacy || oc new-project memoharbor-legacy
+oc -n memoharbor-legacy create secret generic memoharbor-db --from-file=.env=/secure/path/.env
 ```
 
-Pod 전용 ServiceAccount가 이 Secret을 사용합니다. 이미지가 공개여도 현재 YAML을 그대로 사용하려면 pull Secret을 생성하거나 YAML의 `imagePullSecrets` 항목을 제거하십시오.
+.env 내용은 루트 README의 DB_URL, DB_USER, DB_PASSWORD 형식을 사용합니다.
+앱은 /etc/memoharbor/.env를 읽고 MariaDB를 사용합니다.
+Secret 누락·DB 연결 오류 시 정상 서비스되지 않으며 SQLite로 전환하지 않습니다.
+운영 Pod의 SQLite 데이터는 이 manifest로 영속화하지 않습니다.
 
-## 4. 초기 배포와 배포 계정 생성
-
-GHCR에 첫 `:main` 이미지가 발행된 뒤 실행합니다.
+비공개 레지스트리라면 ghcr-pull 이름의 pull Secret을 만드십시오.
+이 이름은 기존 manifest와의 연속성을 위해 유지하며 GHCR 이외 레지스트리도 지정할 수 있습니다.
+공개 이미지라면 ServiceAccount의 imagePullSecrets를 제거할 수 있습니다.
 
 ```sh
+oc -n memoharbor-legacy create secret docker-registry ghcr-pull --docker-server=YOUR_REGISTRY --docker-username=YOUR_USER --docker-password=YOUR_TOKEN
+```
+
+토큰은 신뢰할 수 있는 관리자 터미널에서만 입력하고 Git·채팅·로그에 남기지 마십시오.
+
+## 4. 적용 및 실제 클러스터 검증
+
+app.yaml의 example.invalid 이미지 값을 검증한 digest로 교체하십시오.
+Namespace를 바꾸면 다른 YAML의 namespace와 RBAC subject도 함께 바꿉니다.
+
+```sh
+oc version
+oc apply --dry-run=server -f openshift/app.yaml
 oc apply -f openshift/app.yaml
+oc -n memoharbor-legacy rollout status deployment/memoharbor --timeout=600s
+oc -n memoharbor-legacy get route memoharbor
+oc -n memoharbor-legacy logs deployment/memoharbor
+```
+
+클러스터가 4.15.10인지 확인하고 실제 admission/SCC·이미지 pull·DB 접속을 점검합니다.
+YAML은 restricted-v2에 맞춰 runAsNonRoot, RuntimeDefault seccomp,
+allowPrivilegeEscalation=false, capabilities drop ALL을 사용합니다.
+anyuid 권한을 요구하지 않도록 설계했지만 기본 이미지와 클러스터 정책 검증이 필요합니다.
+관리 포트 9990/9999는 Service나 Route에 노출하지 않습니다.
+
+Route 주소의 https://HOST/memoharbor/에 접속합니다.
+Route는 HTTPS 종료 및 HTTP→HTTPS Redirect를 수행하고 sticky cookie를 허용합니다.
+앱 세션은 Pod 메모리에 있으며 재시작·rolling update 후 재로그인이 필요합니다.
+replicas=1에서도 maxSurge=1로 일시적으로 두 Pod가 뜨므로 공유 MariaDB가 필수입니다.
+
+HTTPS로만 운영한다면 EAP 6.4에서 다음과 같이 앱 세션의 Secure cookie를 설정할 수 있습니다.
+환경에 맞게 descriptor를 수정한 후 다시 빌드하십시오.
+
+```xml
+<cookie-config><http-only>true</http-only><secure>true</secure></cookie-config>
+```
+
+Servlet 3.0은 SameSite 속성을 제공하지 않습니다.
+필요하면 검증된 EAP 패치 또는 프록시 정책으로 적용하십시오.
+원본의 Undertow proxy-address-forwarding 설정은 EAP 6.4의 JBoss Web에 사용할 수 없습니다.
+프록시 헤더 신뢰는 조직의 JBoss Web/외부 프록시 구성으로 처리하고
+클러스터 내부에서 애플리케이션 포트 직접 접근도 제한하십시오.
+현재 코드는 request.isSecure()에 의존하지 않습니다.
+
+startup/liveness는 /live, readiness는 실제 DB 쿼리를 수행하는 /health를 사용합니다.
+DB 장애만으로 이미 시작한 Pod를 재시작하지 않습니다.
+JVM heap 512MiB 및 PermGen 192MiB와 native 메모리를 고려해 Pod limit을 1GiB로 설정했습니다.
+실제 부하·APM agent 메모리·Java 7의 cgroup 미인식에 맞게 조정하십시오.
+
+## 5. 갱신·선택적 배포 계정
+
+```sh
+oc -n memoharbor-legacy set image deployment/memoharbor memoharbor=YOUR_REGISTRY/memoharbor-legacy@sha256:YOUR_DIGEST
+oc -n memoharbor-legacy rollout status deployment/memoharbor --timeout=600s
+oc -n memoharbor-legacy rollout restart deployment/memoharbor
+oc -n memoharbor-legacy rollout undo deployment/memoharbor
+```
+
+Secret 변경 후에는 앱이 시작 시 설정을 읽으므로 재시작이 필요합니다.
+롤백은 DB 데이터를 되돌리지 않습니다.
+app.yaml 재적용 시 image도 해당 파일 값으로 되돌아갈 수 있으므로 현재 digest를 유지하십시오.
+
+deployer-rbac.yaml은 memoharbor Deployment 조회·갱신에만 권한을 부여합니다.
+사용 시 관리자가 적용하고 만료되는 토큰을 우선 사용하십시오.
+
+```sh
 oc apply -f openshift/deployer-rbac.yaml
-oc apply -f openshift/deployer-token.yaml
-oc -n memoharbor rollout status deployment/memoharbor --timeout=600s
-oc -n memoharbor get route memoharbor
+oc -n memoharbor-legacy create token github-deployer --duration=1h
 ```
 
-Route가 생성한 호스트의 `https://<route-host>/memoharbor/`에서 접속합니다.
-초기 replicas는 1이며, MariaDB 공유와 Route sticky cookie를 설정하므로 필요하면 늘릴 수 있습니다.
-로그인 세션은 Pod 메모리에 있어 Pod 교체 시 재로그인이 필요합니다.
-관리 포트 9990은 Service/Route에 노출하지 않습니다.
-임의 UID, `runAsNonRoot`, `RuntimeDefault`, capability 제거로 restricted SCC에 맞추며 `anyuid` 권한은 필요하지 않습니다.
-클러스터의 추가 admission 정책에 따른 실제 검증은 초기 배포에서 확인해야 합니다.
+deployer-token.yaml은 기존의 명시적 장기 토큰 방식이 꼭 필요한 경우에만 선택 적용합니다.
+현재 CI는 클러스터에 접속하거나 이미지를 자동 발행하지 않습니다.
 
-## 5. GitHub 배포 설정
-
-저장소 Settings → Environments에서 `okd` 환경을 만들고 다음 **환경 Secrets**를 설정합니다.
-
-| 이름 | 값 |
-|---|---|
-| `OPENSHIFT_SERVER` | `oc whoami --show-server` 결과 (사설 API URL) |
-| `OPENSHIFT_TOKEN` | `github-deployer-token` Secret에서 생성된 배포 계정 토큰 |
-| `OPENSHIFT_CA_CERT` | API 인증서의 CA PEM 전체. 공인/runner 신뢰 CA 사용 시 생략 가능 |
-
-토큰과 CA는 관리자 터미널에서 조회하여 GitHub의 Secret 입력란에 직접 넣습니다. 결과를 Git에 저장하거나 채팅에 전달하지 마십시오.
-
-```sh
-oc -n memoharbor get secret github-deployer-token -o jsonpath='{.data.token}' | base64 -d
-oc -n memoharbor get secret github-deployer-token -o jsonpath='{.data.ca\.crt}' | base64 -d
-```
-
-두 번째 CA가 실제 API 인증서 체인과 맞지 않으면 클러스터 관리자가 제공한 API CA를 사용합니다. TLS 검증을 끄지 않습니다.
-여기서는 자동화용 ServiceAccount token Secret을 명시적으로 생성합니다. 장기 토큰이므로 주기적으로 교체하십시오.
-`oc create token`으로 발급한 토큰을 대신 사용할 수도 있지만 만료 전에 갱신해야 합니다.
-배포 계정은 `memoharbor` Deployment의 조회·갱신만 허용되며 DB Secret 조회나 프로젝트 관리자 권한은 없습니다.
-
-설정 완료 후 Settings → Secrets and variables → Actions → **Variables**에 저장소 변수 `OPENSHIFT_DEPLOY_ENABLED=true`를 추가합니다.
-설정 전에는 이미지 빌드/발행까지만 실행되고 배포 job은 건너뜁니다.
-Actions에서 `Build and release WAR` → Run workflow → `main`을 선택하면 최초 자동 배포를 실행할 수 있습니다.
-이후 `main` push마다 자동 배포됩니다. PR 및 릴리스 태그는 OKD에 배포하지 않습니다.
-
-사설망 runner가 offline이면 배포 job이 대기합니다. API나 CA, 토큰, 권한 오류는 배포 job 로그에서 확인합니다.
-환경에 승인 규칙을 설정하면 자동 배포 전에 승인을 기다리므로, 무인 자동 배포가 목적이라면 환경 설정을 이에 맞춥니다.
-
-## 6. 운영 및 변경
-
-```sh
-oc -n memoharbor get pods
-oc -n memoharbor logs deployment/memoharbor
-oc -n memoharbor rollout history deployment/memoharbor
-```
-
-`/live`는 DB 접속을 수행하지 않는 startup/liveness 점검입니다. `/health`는 실제 MariaDB 쿼리를 실행하는 readiness 점검입니다.
-DB 오류만으로 이미 시작한 Pod를 재시작하지 않도록 분리했습니다.
-Route에서 HTTPS를 종료하고 WildFly는 router forwarding 헤더를 인식합니다. 외부 접근은 Route를 통해 제공하십시오.
-
-DB Secret을 변경한 뒤에는 앱이 시작할 때 설정을 읽으므로 재시작합니다.
-
-```sh
-oc -n memoharbor rollout restart deployment/memoharbor
-oc -n memoharbor rollout status deployment/memoharbor --timeout=600s
-```
-
-필요 시 이전 이미지로 되돌립니다. 이미지 롤백은 DB 데이터를 되돌리지 않습니다.
-
-```sh
-oc -n memoharbor rollout undo deployment/memoharbor
-oc -n memoharbor rollout status deployment/memoharbor --timeout=600s
-```
-
-자동 배포 job은 이미지와 변경 이력만 갱신합니다. 리소스·Route·probe 등의 YAML을 수정했다면 관리자가 `oc apply -f openshift/app.yaml`로 반영하십시오.
-이 파일의 bootstrap `:main`을 다시 적용하면 이미지도 해당 태그로 돌아갈 수 있으므로 현재 digest로 맞춘 뒤 적용하거나 곧바로 자동 배포를 실행하십시오.
-
-## 참고 문서
-
-- [WildFly 컨테이너 이미지](https://docs.wildfly.org/wildfly-container/)
-- [GHCR 이미지 발행](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)
-- [OKD image pull Secret](https://docs.okd.io/4.19/openshift_images/managing_images/using-image-pull-secrets.html)
-- [Kubernetes probe](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)
-- [ServiceAccount token Secret](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#manually-create-a-long-lived-api-token-for-a-serviceaccount)
-
-OKD 4.22의 실제 클러스터 연결 및 배포 확인은 초기 설정 후 수행합니다.
+참고:
+[OpenShift 4.15 이미지와 임의 UID](https://docs.redhat.com/en/documentation/openshift_container_platform/4.15/html-single/images/images),
+[EAP 6 지원 구성](https://access.redhat.com/articles/111663),
+[EAP 6 유지보수 종료](https://access.redhat.com/articles/3751821).

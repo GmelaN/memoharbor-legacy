@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<jboss-web xmlns="http://www.jboss.com/xml/ns/javaee" version="7.2">
+<jboss-web xmlns="http://www.jboss.com/xml/ns/javaee" version="7.0">
   <context-root>/memoharbor</context-root>
 </jboss-web>

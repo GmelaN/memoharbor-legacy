@@ -1,7 +1,7 @@
-name: Build and release WAR
+name: Verify Java 7 legacy WAR
 on:
   push:
-    branches: [main]
+    branches: [main, master]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -32,140 +32,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '17'
-          cache: maven
-      - name: Verify and package
-        run: mvn --batch-mode --no-transfer-progress verify
-      - name: Verify real WildFly deployment and persistence
+          distribution: zulu
+          java-version: '7'
+      - name: Install Maven that runs on Java 7
         shell: bash
         run: |
-          curl --fail --location --retry 3 https://github.com/wildfly/wildfly/releases/download/27.0.1.Final/wildfly-27.0.1.Final.tar.gz -o "$RUNNER_TEMP/wildfly.tar.gz"
-          tar -xzf "$RUNNER_TEMP/wildfly.tar.gz" -C "$RUNNER_TEMP"
-          JBOSS_HOME="$RUNNER_TEMP/wildfly-27.0.1.Final" bash scripts/verify-wildfly.sh
+          set -euo pipefail
+          url=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.8.8/apache-maven-3.8.8-bin.tar.gz
+          cd "$RUNNER_TEMP"
+          curl --fail --location "$url" -o maven.tar.gz
+          curl --fail --location "$url.sha512" -o maven.sha512
+          printf '%s  maven.tar.gz\n' "$(cat maven.sha512)" | sha512sum --check -
+          tar -xzf maven.tar.gz
+          echo "$RUNNER_TEMP/apache-maven-3.8.8/bin" >> "$GITHUB_PATH"
+      - name: Compile, test and verify Java 7 APIs
+        run: mvn --batch-mode --no-transfer-progress -Dhttps.protocols=TLSv1.2 verify
+      - name: Inspect every packaged class and dependency
+        run: python3 scripts/verify-war.py target/memoharbor.war
       - uses: actions/upload-artifact@v4
         with:
-          name: memoharbor-war
+          name: memoharbor-legacy-war
           path: target/memoharbor.war
-  image:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    concurrency:
-      group: memoharbor-image-main
-      cancel-in-progress: false
-    outputs:
-      reference: ${{ steps.publish.outputs.reference }}
-    services:
-      mariadb:
-        image: mariadb:11.4
-        env:
-          MARIADB_ROOT_PASSWORD: ci-root-only
-          MARIADB_DATABASE: apm_test
-          MARIADB_USER: apm_test
-          MARIADB_PASSWORD: ci-test-only
-        ports: ['3306:3306']
-        options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
-    env:
-      MARIADB_TEST_URL: jdbc:mariadb://127.0.0.1:3306/apm_test
-      MARIADB_TEST_USER: apm_test
-      MARIADB_TEST_PASSWORD: ci-test-only
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: memoharbor-war
-          path: target
-      - name: Build image
-        shell: bash
-        run: |
-          image="ghcr.io/${GITHUB_REPOSITORY,,}"
-          echo "IMAGE=$image" >> "$GITHUB_ENV"
-          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag "$image:sha-$GITHUB_SHA" --tag "$image:main" .
-      - name: Verify arbitrary UID and MariaDB in the actual container
-        run: bash scripts/verify-container.sh "$IMAGE:sha-$GITHUB_SHA"
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish verified image
-        id: publish
-        shell: bash
-        run: |
-          docker push "$IMAGE:sha-$GITHUB_SHA"
-          docker push "$IMAGE:main"
-          reference="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:sha-$GITHUB_SHA")"
-          echo "reference=$reference" >> "$GITHUB_OUTPUT"
-  deploy:
-    if: github.ref == 'refs/heads/main' && vars.OPENSHIFT_DEPLOY_ENABLED == 'true'
-    needs: image
-    runs-on: [self-hosted, linux, x64, okd-memoharbor]
-    environment: okd
-    permissions:
-      contents: read
-    concurrency:
-      group: memoharbor-okd-deploy
-      cancel-in-progress: false
-    env:
-      IMAGE_REFERENCE: ${{ needs.image.outputs.reference }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Use an isolated Kubernetes configuration
-        shell: bash
-        run: echo "KUBECONFIG=$RUNNER_TEMP/memoharbor-kubeconfig" >> "$GITHUB_ENV"
-      - name: Skip superseded commits
-        id: current
-        shell: bash
-        run: |
-          git fetch origin main
-          if [[ "$(git rev-parse origin/main)" == "$GITHUB_SHA" ]]; then
-            echo 'deploy=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'A newer main commit exists; skip this deployment.'
-          fi
-      - name: Authenticate to private OKD
-        if: steps.current.outputs.deploy == 'true'
-        shell: bash
-        env:
-          OPENSHIFT_SERVER: ${{ secrets.OPENSHIFT_SERVER }}
-          OPENSHIFT_TOKEN: ${{ secrets.OPENSHIFT_TOKEN }}
-          OPENSHIFT_CA_CERT: ${{ secrets.OPENSHIFT_CA_CERT }}
-        run: |
-          set -euo pipefail
-          command -v oc >/dev/null
-          : "${OPENSHIFT_SERVER:?Set OPENSHIFT_SERVER in the okd environment}"
-          : "${OPENSHIFT_TOKEN:?Set OPENSHIFT_TOKEN in the okd environment}"
-          umask 077
-          if [[ -n "$OPENSHIFT_CA_CERT" ]]; then
-            printf '%s\n' "$OPENSHIFT_CA_CERT" > "$RUNNER_TEMP/memoharbor-ca.crt"
-            oc config set-cluster okd --server="$OPENSHIFT_SERVER" --certificate-authority="$RUNNER_TEMP/memoharbor-ca.crt" --embed-certs=true
-          else
-            oc config set-cluster okd --server="$OPENSHIFT_SERVER"
-          fi
-          oc config set-credentials github-deployer --token="$OPENSHIFT_TOKEN"
-          oc config set-context memoharbor --cluster=okd --user=github-deployer --namespace=memoharbor
-          oc config use-context memoharbor
-      - name: Update image and wait for readiness
-        if: steps.current.outputs.deploy == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          oc -n memoharbor set image deployment/memoharbor memoharbor="$IMAGE_REFERENCE"
-          oc -n memoharbor annotate deployment/memoharbor kubernetes.io/change-cause="GitHub commit $GITHUB_SHA" --overwrite
-          oc -n memoharbor rollout status deployment/memoharbor --timeout=600s
-      - name: Remove temporary credentials
-        if: always()
-        shell: bash
-        run: rm -f "$KUBECONFIG" "$RUNNER_TEMP/memoharbor-ca.crt"
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
@@ -175,9 +62,9 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: memoharbor-war
+          name: memoharbor-legacy-war
           path: dist
-      - name: Publish release
+      - name: Publish tested WAR
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -185,4 +72,4 @@ jobs:
         run: |
           cd dist
           sha256sum memoharbor.war > SHA256SUMS
-          gh release create "$TAG" memoharbor.war SHA256SUMS --verify-tag --title "MemoHarbor $TAG" --notes "Independent Jakarta Servlet 6 webapp for WildFly 27+ / Java 17+. Configure an external .env for shared MariaDB; without .env, persistent local SQLite is used."
+          gh release create "$TAG" memoharbor.war SHA256SUMS --verify-tag --title "MemoHarbor Legacy $TAG" --notes "Java 7 / Servlet 3.0 WAR targeting JBoss EAP 6.4. See VALIDATION.md for verified scope and limitations. EAP container and OpenShift cluster deployment require separate acceptance testing."

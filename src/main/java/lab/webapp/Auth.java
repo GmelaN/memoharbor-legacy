@@ -1,12 +1,14 @@
 package lab.webapp;
 
-import jakarta.servlet.http.*;
+import javax.servlet.http.*;
 import java.io.IOException;
 import java.sql.*;
 import java.security.*;
-import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.PBEKeySpec;
-import java.util.Base64;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import org.apache.commons.codec.binary.Base64;
 
 /** App-local accounts; identity is read exclusively from the server session. */
 final class Auth {
@@ -88,19 +90,30 @@ final class Auth {
     static void redirect(HttpServletRequest r, HttpServletResponse p, String path) {
         p.setStatus(303); p.setHeader("Location", r.getContextPath() + path);
     }
-    private static String random() { byte[] b = new byte[32]; RANDOM.nextBytes(b); return Base64.getUrlEncoder().withoutPadding().encodeToString(b); }
+    private static String random() { byte[] b = new byte[32]; RANDOM.nextBytes(b); return Base64.encodeBase64URLSafeString(b); }
     private static String hash(String password) {
         byte[] salt = new byte[32]; RANDOM.nextBytes(salt);
-        return "600000$" + Base64.getEncoder().encodeToString(salt) + "$" + Base64.getEncoder().encodeToString(derive(password, salt, 600000));
+        return "600000$" + Base64.encodeBase64String(salt) + "$" + Base64.encodeBase64String(derive(password, salt, 600000));
     }
-    private static byte[] derive(String password, byte[] salt, int iterations) {
-        PBEKeySpec spec = new PBEKeySpec(password.toCharArray(), salt, iterations, 256);
-        try { return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded(); }
-        catch (GeneralSecurityException e) { throw new IllegalStateException(e); }
-        finally { spec.clearPassword(); }
+    static byte[] derive(String password, byte[] salt, int iterations) {
+        if (iterations < 1) throw new IllegalArgumentException("Invalid PBKDF2 iteration count");
+        byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_8);
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(passwordBytes, "HmacSHA256"));
+            mac.update(salt);
+            byte[] block = mac.doFinal(new byte[] {0, 0, 0, 1});
+            byte[] result = block.clone();
+            for (int round = 1; round < iterations; round++) {
+                block = mac.doFinal(block);
+                for (int index = 0; index < result.length; index++) result[index] ^= block[index];
+            }
+            return result;
+        } catch (GeneralSecurityException error) { throw new IllegalStateException(error); }
+        finally { Arrays.fill(passwordBytes, (byte) 0); }
     }
     private static boolean verify(String password, String hash) {
         String[] parts = hash.split("\\$");
-        return MessageDigest.isEqual(Base64.getDecoder().decode(parts[2]), derive(password, Base64.getDecoder().decode(parts[1]), Integer.parseInt(parts[0])));
+        return MessageDigest.isEqual(Base64.decodeBase64(parts[2]), derive(password, Base64.decodeBase64(parts[1]), Integer.parseInt(parts[0])));
     }
 }

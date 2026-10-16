@@ -1,13 +1,18 @@
-FROM quay.io/wildfly/wildfly:41.0.1.Final-jdk21
-
-LABEL org.opencontainers.image.source="https://github.com/GmelaN/memoharbor"
+ARG EAP64_JAVA7_IMAGE
+FROM ${EAP64_JAVA7_IMAGE}
+LABEL org.opencontainers.image.source="https://github.com/GmelaN/memoharbor-legacy"
+ENV JBOSS_HOME=/opt/eap
 USER 0
-# Trust forwarding headers only behind the OKD router. Management stays on localhost.
-RUN /opt/jboss/wildfly/bin/jboss-cli.sh --commands="embed-server --std-out=echo,/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=proxy-address-forwarding,value=true),stop-embedded-server" \
-    && chgrp -R 0 /opt/jboss/wildfly/standalone \
-    && chmod -R g=u /opt/jboss/wildfly/standalone
-COPY --chown=1000:0 target/memoharbor.war /opt/jboss/wildfly/standalone/deployments/memoharbor.war
-RUN chmod g+r /opt/jboss/wildfly/standalone/deployments/memoharbor.war
+RUN test -x /opt/eap/bin/standalone.sh \
+    && test -n "$JAVA_HOME" \
+    && "$JAVA_HOME/bin/java" -version 2>&1 | grep -q 'version "1.7.0' \
+    && mkdir -p /opt/eap/standalone/deployments \
+    && chgrp -R 0 /opt/eap/standalone \
+    && chmod -R g=u /opt/eap/standalone
+COPY target/memoharbor.war /opt/eap/standalone/deployments/memoharbor.war
+RUN touch /opt/eap/standalone/deployments/memoharbor.war.dodeploy \
+    && chmod g+r /opt/eap/standalone/deployments/memoharbor.war \
+    && chmod g+rw /opt/eap/standalone/deployments/memoharbor.war.dodeploy
 USER 1000
 EXPOSE 8080
-CMD ["/opt/jboss/wildfly/bin/standalone.sh", "-b", "0.0.0.0"]
+CMD ["/opt/eap/bin/standalone.sh", "-b", "0.0.0.0", "-bmanagement", "127.0.0.1"]
