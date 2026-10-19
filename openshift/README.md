@@ -34,6 +34,14 @@ docker build --build-arg EAP64_JAVA7_IMAGE=YOUR_REGISTRY/eap64-java7@sha256:YOUR
 
 ## 2. 이미지 검증
 
+GitHub Actions의 **Publish verified EAP Java 7 image to GHCR**를 수동 실행해 빌드·검증·GHCR 게시를 한 번에 수행할 수도 있습니다.
+base_image 입력에는 위 계약을 만족하는 EAP 6.4/Java 7 이미지 주소를 지정합니다.
+WAR·Helm 검증을 통과한 뒤 실제 컨테이너를 임의 UID로 실행하고 MariaDB·재시작 테스트까지 통과해야 게시합니다.
+게시 태그는 `ghcr.io/gmelan/memoharbor-legacy:java7`과 `sha-<commit>`이며 실행 Summary에서 digest를 확인할 수 있습니다.
+비공개 기본 이미지 레지스트리에는 저장소 Secrets `EAP_REGISTRY`, `EAP_REGISTRY_USERNAME`, `EAP_REGISTRY_PASSWORD`를 설정합니다.
+GHCR 게시는 `GITHUB_TOKEN`의 packages:write 권한을 사용하며 기존 패키지가 있다면 해당 저장소의 패키지 쓰기 권한이 필요합니다.
+이 워크플로는 OpenShift에 배포하지 않습니다.
+
 전용 Linux Docker 호스트에서 실제 MariaDB 테스트 DB를 준비하고 다음을 실행하십시오.
 
 ```sh
@@ -137,7 +145,7 @@ oc -n memoharbor-legacy create token github-deployer --duration=1h
 ```
 
 deployer-token.yaml은 기존의 명시적 장기 토큰 방식이 꼭 필요한 경우에만 선택 적용합니다.
-현재 CI는 클러스터에 접속하거나 이미지를 자동 발행하지 않습니다.
+현재 CI는 클러스터에 접속하지 않습니다. 이미지는 위 수동 GHCR 게시 워크플로에서만 발행합니다.
 
 참고:
 [OpenShift 4.15 이미지와 임의 UID](https://docs.redhat.com/en/documentation/openshift_container_platform/4.15/html-single/images/images),
