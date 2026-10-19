@@ -1,0 +1,7 @@
+image:
+  repository: ghcr.io/gmelan/memoharbor-legacy
+  tag: java7
+  digest: sha256:467b8e2f38fc6121c29a48f8f4c9d139cb6168442b0793eda8324f62e60663b5
+imagePullSecrets: []
+database:
+  existingSecret: memoharbor-db

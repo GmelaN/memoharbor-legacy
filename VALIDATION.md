@@ -49,7 +49,9 @@ CI 결과와 로컬 실행 결과는 구분합니다.
 최초 CI에서 Maven Central의 존재하지 않는 .sha512 파일 URL이 실패했습니다.
 Apache 공식 배포 사이트의 SHA-512와 대조한 고정 해시로 수정한 뒤 위 실행이 성공했습니다.
 
-## 수행하지 못한 검증
+## 수행하지 못한 검증 (2026-10-16 초기 전환 시점)
+
+아래는 초기 검증 당시의 제한입니다. 이후 공개 EAP 컨테이너 실행·게시 결과는 마지막 GHCR 검증 절에 별도로 기록했습니다. 실제 OpenShift 클러스터 검증은 계속 미수행 상태입니다.
 
 - 라이선스가 있는 EAP 6.4 설치가 제공되지 않아 EAP 부팅, descriptor 파서, 모듈 클래스 로딩, 실제 배포/재배포는 실행하지 않았습니다.
 - EAP 6.4/Java 7 기본 이미지가 없어 Docker 이미지 빌드·임의 UID 실행·컨테이너 재시작은 실행하지 않았습니다.
@@ -113,8 +115,37 @@ EAP에서 반복 재배포할 때 클래스 로더 및 native 라이브러리 �
 - Helm package 생성 및 GitHub Actions 설정의 actionlint 검사를 통과했습니다.
 - [GitHub Actions 39183329967](https://github.com/GmelaN/memoharbor-legacy/actions/runs/39183329967)에서도 Helm 6개 테스트·차트 패키징과 기존 Java 7/MariaDB 12개 테스트가 모두 통과했습니다. 검증한 코드 커밋은 bf023d53427c2d06cf2441ece323b1664d4d3073입니다.
 - 차트에는 DB 비밀번호·DB 생성·EAP 이미지 빌드·클러스터 배포 인증을 포함하지 않습니다.
-- OpenShift 4.15.10 실제 admission/설치/업그레이드/롤백과 EAP 이미지 실행은 여전히 미검증입니다.
+- 차트 추가 시점에는 OpenShift 4.15.10 실제 admission/설치/업그레이드/롤백과 EAP 이미지 실행이 미검증이었습니다. 이후 EAP 이미지 실행은 아래 GHCR 검증 절을 참고하십시오. 클러스터 배포는 계속 미검증입니다.
 - 기존 YAML로 만든 같은 이름 리소스는 Helm이 자동 인수하지 않으며 새 namespace에서 설치하거나 관리자가 별도 전환해야 합니다.
+
+## 공개 EAP Java 7 이미지 및 GHCR 게시 (2026-10-19)
+
+[게시 실행 39187563871](https://github.com/GmelaN/memoharbor-legacy/actions/runs/39187563871)이 성공했습니다.
+이미지에 포함된 코드 커밋은 `baefa226bc5ca3ee855ce6ce038324fe4ed5ee8a`입니다.
+
+- WAR 12개 테스트, Helm 6개 테스트와 패키징 검증이 모두 통과했습니다.
+- Dockerfile.public은 공개 daggerok/jboss-eap-6.4:6.4.22-centos의 EAP 설치 디렉터리만 복사하고 최종 OS/JVM은 공개 azul/zulu-openjdk:7을 사용합니다.
+- 두 배포 이미지는 Docker Registry에서 확인한 sha256 digest로 고정했습니다. digest는 Dockerfile.public에 기록되어 있습니다.
+- 원본 EAP 이미지의 Java 8·sudo·기본 관리 계정 환경을 그대로 실행하지 않습니다. 관리 계정 파일은 비우고 외부 JAVA_OPTS를 보존하는 standalone.conf로 교체했습니다.
+- 빌드 중 실제 JVM이 1.7.0 계열임을 검사했습니다.
+- Linux amd64 컨테이너에서 UID 1001230000:0, capability drop ALL 및 no-new-privileges로 실행했습니다.
+- 서버 로그에서 실제 `JBoss EAP 6.4.22.GA (AS 7.5.22.Final-redhat-1)` 기동을 확인했습니다.
+- 실제 MariaDB에서 회원가입·로그인·CSRF·메모 등록·HTML 이스케이프·설정/DB 파일 접근 차단을 검사했습니다.
+- 컨테이너 재시작 후 기존 계정 로그인·메모 유지·삭제를 검사했습니다.
+- 모든 검증 후 GHCR에 java7 및 sha-baefa226bc5ca3ee855ce6ce038324fe4ed5ee8a 태그를 게시했습니다.
+- 게시 후 익명 GHCR manifest 조회로 인증 없이 pull 가능한 상태와 아래 digest 일치를 확인했습니다.
+
+```text
+ghcr.io/gmelan/memoharbor-legacy@sha256:467b8e2f38fc6121c29a48f8f4c9d139cb6168442b0793eda8324f62e60663b5
+```
+
+Helm용 고정 digest 설정은 openshift/values-ghcr.yaml입니다.
+현재 EAP 이미지 검증은 MariaDB 모드이며 EAP에서 SQLite native 로딩·재배포는 별도 검증이 필요합니다.
+실제 OpenShift 4.15.10 admission·Route·클러스터 rollout·장애 복구 및 벤더 지원 인증은 검증하지 않았습니다.
+기본 EAP 배포본은 커뮤니티 이미지이며 최신 보안 패치나 Red Hat의 운영 지원을 보장하지 않습니다.
+
+- [EAP 배포 이미지 소스](https://github.com/daggerok/jboss-eap-6.4)
+- [Zulu 공개 이미지 소스](https://github.com/zulu-openjdk/zulu-openjdk)
 
 ## 벤더 지원과 보안
 

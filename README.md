@@ -107,6 +107,16 @@ Pod 교체 시 재로그인해야 하며 세션 복제는 별도 구성입니다
 [Helm 차트 설치·갱신 안내](charts/memoharbor-legacy/README.md)로도 배포할 수 있습니다.
 이미지 주소와 기존 DB Secret을 지정한 뒤 `helm upgrade --install`로 관리합니다.
 
+검증을 통과해 공개 게시한 이미지는 `ghcr.io/gmelan/memoharbor-legacy:java7`입니다.
+공개 EAP 6.4.22 배포본과 Zulu Java 7을 사용하며 고정 digest 설정은 `openshift/values-ghcr.yaml`에 있습니다.
+대상 namespace에 memoharbor-db Secret을 준비한 뒤 다음과 같이 설치합니다.
+
+```sh
+helm upgrade --install memoharbor ./charts/memoharbor-legacy -n memoharbor-legacy --create-namespace -f openshift/values-ghcr.yaml --wait --timeout 10m
+```
+
+이미지 게시와 컨테이너 테스트는 완료했으며 실제 OpenShift 클러스터 설치는 별도 검증해야 합니다.
+
 [OpenShift 4.15.10 배포 안내](openshift/README.md)를 따르십시오.
 원본 WildFly/JDK 21 이미지와 OKD 4.22 자동 배포는 이 저장소의 Java 7 대상과 맞지 않아 교체했습니다.
 CI는 WAR 검증과 artifact 저장을 수행하고 `v*` 태그에서 WAR·SHA256SUMS를 Release에 첨부합니다.

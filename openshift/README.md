@@ -1,5 +1,9 @@
 # OpenShift Container Platform 4.15.10 — MemoHarbor Legacy
 
+공개 GHCR 이미지 `ghcr.io/gmelan/memoharbor-legacy:java7` 게시가 완료되었습니다.
+[게시 Actions](https://github.com/GmelaN/memoharbor-legacy/actions/runs/39187563871)에서 EAP 6.4.22/Java 7 임의 UID 실행과 MariaDB·컨테이너 재시작 테스트를 통과했습니다.
+Helm 설치 시 검증된 digest가 들어 있는 `-f openshift/values-ghcr.yaml`을 사용할 수 있습니다. 이미지 pull 인증은 필요하지 않지만 DB Secret은 별도로 준비해야 합니다.
+
 Helm으로 설치·갱신하려면 [차트 안내](../charts/memoharbor-legacy/README.md)를 사용하십시오.
 아래의 기본 이미지·DB 준비 조건은 Helm에서도 동일하며 app.yaml과 Helm을 같은 리소스에 함께 적용하지 않습니다.
 
