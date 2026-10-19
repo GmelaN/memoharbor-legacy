@@ -10,6 +10,19 @@ apps/v1, v1, route.openshift.io/v1, rbac.authorization.k8s.io/v1 API를 사용�
 
 ## 1. EAP 기본 이미지 준비
 
+공개 배포본을 사용하는 경우에는 별도 설치 ZIP 없이 다음과 같이 빌드합니다.
+
+```sh
+docker build -f Dockerfile.public -t ghcr.io/gmelan/memoharbor-legacy:java7 .
+```
+
+Dockerfile.public은 커뮤니티 이미지 daggerok/jboss-eap-6.4:6.4.22-centos에서 EAP 설치 디렉터리만 가져오고,
+최종 실행 환경은 Azul의 azul/zulu-openjdk:7을 사용합니다. 두 이미지는 조회한 sha256 digest로 고정되어 있습니다.
+원본 EAP 이미지의 Java 8, OS, sudo 구성 및 기본 관리 계정은 최종 실행 환경으로 사용하지 않습니다.
+standalone.conf는 외부 JAVA_OPTS를 유지하는 설정으로 교체하고 기존 관리 계정 파일을 비웁니다.
+지원 계약이 있는 공식 EAP 이미지가 아닌 커뮤니티 배포본이며, 실제 운영 지원 범위는 별도로 확인해야 합니다.
+기존 사내 기본 이미지를 사용하는 Dockerfile 방식은 아래와 같습니다.
+
 조직이 사용 권한을 가진 **EAP 6.4 + Java 7** Linux 이미지를 준비하십시오.
 기본 이미지는 다음 계약을 만족해야 합니다.
 
@@ -35,7 +48,8 @@ docker build --build-arg EAP64_JAVA7_IMAGE=YOUR_REGISTRY/eap64-java7@sha256:YOUR
 ## 2. 이미지 검증
 
 GitHub Actions의 **Publish verified EAP Java 7 image to GHCR**를 수동 실행해 빌드·검증·GHCR 게시를 한 번에 수행할 수도 있습니다.
-base_image 입력에는 위 계약을 만족하는 EAP 6.4/Java 7 이미지 주소를 지정합니다.
+dockerfile 입력의 기본값 Dockerfile.public은 위 공개 배포본을 사용하며 base_image 입력이 필요 없습니다.
+사내 기본 이미지를 사용할 때만 dockerfile=Dockerfile을 선택하고 base_image에 위 계약을 만족하는 이미지 주소를 지정합니다.
 WAR·Helm 검증을 통과한 뒤 실제 컨테이너를 임의 UID로 실행하고 MariaDB·재시작 테스트까지 통과해야 게시합니다.
 게시 태그는 `ghcr.io/gmelan/memoharbor-legacy:java7`과 `sha-<commit>`이며 실행 Summary에서 digest를 확인할 수 있습니다.
 비공개 기본 이미지 레지스트리에는 저장소 Secrets `EAP_REGISTRY`, `EAP_REGISTRY_USERNAME`, `EAP_REGISTRY_PASSWORD`를 설정합니다.

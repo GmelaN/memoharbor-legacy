@@ -1,0 +1,28 @@
+ARG EAP64_DISTRIBUTION_IMAGE=daggerok/jboss-eap-6.4@sha256:ab914ae1c01c573d07654f715e98790e13ca15192817ddaae8710a3303af8e17
+ARG JAVA7_RUNTIME_IMAGE=azul/zulu-openjdk@sha256:ba31b92fba2cfa84844e187d4d70343c5a0a1886f30131a66afc5908d81a0ca5
+FROM ${EAP64_DISTRIBUTION_IMAGE} AS distribution
+FROM ${JAVA7_RUNTIME_IMAGE}
+LABEL org.opencontainers.image.source="https://github.com/GmelaN/memoharbor-legacy"
+ENV JBOSS_HOME=/opt/eap
+USER 0
+COPY --from=distribution /home/jboss/jboss-eap-6.4 /opt/eap
+COPY container/standalone.conf /opt/eap/bin/standalone.conf
+RUN "$JAVA_HOME/bin/java" -version 2>&1 | grep -q 'version "1.7.0' \
+    && test -x /opt/eap/bin/standalone.sh \
+    && rm -rf /opt/eap/standalone/data/* /opt/eap/standalone/log/* /opt/eap/standalone/tmp/* /opt/eap/standalone/deployments/* \
+    && printf '' > /opt/eap/standalone/configuration/mgmt-users.properties \
+    && printf '' > /opt/eap/standalone/configuration/mgmt-groups.properties \
+    && printf '' > /opt/eap/standalone/configuration/application-users.properties \
+    && printf '' > /opt/eap/standalone/configuration/application-roles.properties \
+    && chmod -R a+rX /opt/eap \
+    && chgrp -R 0 /opt/eap/standalone \
+    && chmod -R g=u /opt/eap/standalone
+COPY target/memoharbor.war /opt/eap/standalone/deployments/memoharbor.war
+RUN touch /opt/eap/standalone/deployments/memoharbor.war.dodeploy \
+    && chmod g+r /opt/eap/standalone/deployments/memoharbor.war \
+    && chmod g+rw /opt/eap/standalone/deployments/memoharbor.war.dodeploy
+WORKDIR /opt/eap
+USER 1000
+EXPOSE 8080
+ENTRYPOINT ["/opt/eap/bin/standalone.sh"]
+CMD ["-b", "0.0.0.0", "-bmanagement", "127.0.0.1"]

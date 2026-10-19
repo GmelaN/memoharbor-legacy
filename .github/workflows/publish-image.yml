@@ -2,9 +2,17 @@ name: Publish verified EAP Java 7 image to GHCR
 on:
   workflow_dispatch:
     inputs:
-      base_image:
-        description: 'Licensed EAP 6.4 / Java 7 base image with EAP at /opt/eap (prefer an immutable digest)'
+      dockerfile:
+        description: 'Public EAP distribution + Zulu Java 7, or an existing custom base'
         required: true
+        type: choice
+        default: Dockerfile.public
+        options:
+          - Dockerfile.public
+          - Dockerfile
+      base_image:
+        description: 'Only for Dockerfile: existing EAP 6.4 / Java 7 image at /opt/eap'
+        required: false
         type: string
 permissions:
   contents: read
@@ -36,6 +44,7 @@ jobs:
           --health-retries=20
     env:
       BASE_IMAGE: ${{ inputs.base_image }}
+      DOCKERFILE: ${{ inputs.dockerfile }}
       EAP_REGISTRY: ${{ secrets.EAP_REGISTRY }}
       MARIADB_TEST_URL: jdbc:mariadb://127.0.0.1:3306/apm_test
       MARIADB_TEST_USER: apm_test
@@ -63,10 +72,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          : "${BASE_IMAGE:?An EAP 6.4 / Java 7 base image is required}"
+          build_args=()
+          if [[ "$DOCKERFILE" == Dockerfile ]]; then
+            : "${BASE_IMAGE:?An EAP 6.4 / Java 7 base image is required for Dockerfile}"
+            build_args+=(--build-arg "EAP64_JAVA7_IMAGE=$BASE_IMAGE")
+          fi
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           echo "IMAGE=$image" >> "$GITHUB_ENV"
-          docker build --build-arg "EAP64_JAVA7_IMAGE=$BASE_IMAGE" --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag "$image:sha-$GITHUB_SHA" --tag "$image:java7" .
+          docker build --file "$DOCKERFILE" "${build_args[@]}" --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag "$image:sha-$GITHUB_SHA" --tag "$image:java7" .
       - name: Verify arbitrary UID, MariaDB and restart before publishing
         run: bash scripts/verify-container.sh "$IMAGE:sha-$GITHUB_SHA"
       - name: Push verified image and report digest

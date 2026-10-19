@@ -1,5 +1,8 @@
 **
 !Dockerfile
+!Dockerfile.public
+!container/
+!container/standalone.conf
 !target/
 target/**
 !target/memoharbor.war

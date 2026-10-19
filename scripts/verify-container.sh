@@ -29,6 +29,7 @@ wait_ready() {
   return 1
 }
 wait_ready
+docker logs "$container_name" 2>&1 | grep -E 'JBoss EAP 6[.]4'
 test_user="container_$(date +%s)"
 python3 "$project_dir/scripts/wildfly-smoke.py" --username "$test_user" --backend MariaDB
 docker restart "$container_name"
