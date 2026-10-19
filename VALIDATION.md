@@ -111,6 +111,7 @@ EAP에서 반복 재배포할 때 클래스 로더 및 native 라이브러리 �
 - scripts/verify-helm.py의 6개 테스트가 통과했습니다. namespace·selector 연결, 보안 기본값, 외부 Secret 참조, digest 우선순위, Route/ServiceAccount 옵션, release 격리, 잘못된 설정 거부와 패키지의 .env 제외를 확인합니다.
 - 로컬 Windows sandbox의 Python 임시 폴더 ACL 문제를 피하기 위해 테스트 실행 시 작업 폴더 안의 임시 경로 및 상속 ACL을 사용했습니다. 배포 차트 설정은 변경하지 않았습니다.
 - Helm package 생성 및 GitHub Actions 설정의 actionlint 검사를 통과했습니다.
+- [GitHub Actions 39183329967](https://github.com/GmelaN/memoharbor-legacy/actions/runs/39183329967)에서도 Helm 6개 테스트·차트 패키징과 기존 Java 7/MariaDB 12개 테스트가 모두 통과했습니다. 검증한 코드 커밋은 bf023d53427c2d06cf2441ece323b1664d4d3073입니다.
 - 차트에는 DB 비밀번호·DB 생성·EAP 이미지 빌드·클러스터 배포 인증을 포함하지 않습니다.
 - OpenShift 4.15.10 실제 admission/설치/업그레이드/롤백과 EAP 이미지 실행은 여전히 미검증입니다.
 - 기존 YAML로 만든 같은 이름 리소스는 Helm이 자동 인수하지 않으며 새 namespace에서 설치하거나 관리자가 별도 전환해야 합니다.
