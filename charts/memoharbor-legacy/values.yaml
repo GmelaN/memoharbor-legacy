@@ -1,0 +1,47 @@
+fullnameOverride: ""
+replicaCount: 1
+
+image:
+  repository: image-registry.example.invalid/memoharbor-legacy
+  tag: validated
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+database:
+  existingSecret: memoharbor-db
+  secretKey: .env
+
+serviceAccount:
+  create: true
+  name: ""
+
+service:
+  port: 8080
+
+route:
+  enabled: true
+  host: ""
+  annotations:
+    haproxy.router.openshift.io/disable_cookies: "false"
+
+javaOpts: "-Xms128m -Xmx512m -XX:MaxPermSize=192m -Djava.net.preferIPv4Stack=true"
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+nodeSelector: {}
+tolerations: []
+affinity: {}

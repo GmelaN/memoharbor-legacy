@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["image", "database", "replicaCount", "service", "route", "serviceAccount", "javaOpts"],
+  "properties": {
+    "fullnameOverride": {"type": "string", "maxLength": 63, "pattern": "^$|^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"},
+    "replicaCount": {"type": "integer", "minimum": 0},
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag", "digest", "pullPolicy"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string", "minLength": 1},
+        "digest": {"type": "string", "pattern": "^$|^sha256:[a-f0-9]{64}$"},
+        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+      }
+    },
+    "database": {
+      "type": "object",
+      "required": ["existingSecret", "secretKey"],
+      "properties": {
+        "existingSecret": {"type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"},
+        "secretKey": {"type": "string", "minLength": 1, "pattern": "^[a-zA-Z0-9._-]+$"}
+      }
+    },
+    "service": {"type": "object", "required": ["port"], "properties": {"port": {"type": "integer", "minimum": 1, "maximum": 65535}}},
+    "route": {
+      "type": "object",
+      "required": ["enabled", "host", "annotations"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "host": {"type": "string"},
+        "annotations": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "serviceAccount": {"type": "object", "required": ["create", "name"], "properties": {"create": {"type": "boolean"}, "name": {"type": "string"}}},
+    "javaOpts": {"type": "string"},
+    "imagePullSecrets": {"type": "array", "items": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string", "minLength": 1}}}},
+    "podAnnotations": {"type": "object", "additionalProperties": {"type": "string"}},
+    "podSecurityContext": {"type": "object"},
+    "securityContext": {"type": "object"},
+    "resources": {"type": "object"},
+    "nodeSelector": {"type": "object", "additionalProperties": {"type": "string"}},
+    "tolerations": {"type": "array"},
+    "affinity": {"type": "object"}
+  }
+}

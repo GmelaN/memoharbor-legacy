@@ -1,5 +1,8 @@
 # OpenShift Container Platform 4.15.10 — MemoHarbor Legacy
 
+Helm으로 설치·갱신하려면 [차트 안내](../charts/memoharbor-legacy/README.md)를 사용하십시오.
+아래의 기본 이미지·DB 준비 조건은 Helm에서도 동일하며 app.yaml과 Helm을 같은 리소스에 함께 적용하지 않습니다.
+
 이 디렉터리는 OpenShift **4.15.10**용 Deployment, Service, edge TLS Route,
 ServiceAccount와 선택적 배포 RBAC를 제공합니다.
 apps/v1, v1, route.openshift.io/v1, rbac.authorization.k8s.io/v1 API를 사용합니다.

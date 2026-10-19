@@ -1,0 +1,21 @@
+Release: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+
+The image must contain JBoss EAP 6.4 / Java 7 at /opt/eap.
+The existing Secret {{ .Values.database.existingSecret }} must contain key {{ .Values.database.secretKey }} with the application's .env configuration.
+{{- if contains "example.invalid" .Values.image.repository }}
+WARNING: image.repository is a placeholder. Set a validated image before installing.
+{{- end }}
+
+Check readiness:
+  oc -n {{ .Release.Namespace }} rollout status deployment/{{ include "memoharbor.fullname" . }} --timeout=600s
+{{ if .Values.route.enabled }}
+Find the HTTPS route host and open /memoharbor/:
+  oc -n {{ .Release.Namespace }} get route {{ include "memoharbor.fullname" . }}
+{{ else }}
+Forward the HTTP service:
+  kubectl -n {{ .Release.Namespace }} port-forward service/{{ include "memoharbor.fullname" . }} 8080:{{ .Values.service.port }}
+  Open http://127.0.0.1:8080/memoharbor/
+{{ end }}
+After changing the external Secret, restart the deployment to reload configuration.
+EAP image execution and OpenShift cluster deployment require separate acceptance testing.

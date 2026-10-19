@@ -36,7 +36,7 @@ CI 결과와 로컬 실행 결과는 구분합니다.
 ## GitHub Actions 실제 결과
 
 [검증 실행 38889774022](https://github.com/GmelaN/memoharbor-legacy/actions/runs/38889774022)의 build job이 성공했습니다.
-검증한 코드 커밋은 `e38afcbd360af2db1865ab253418034997667217`이며 이후 변경은 이 검증 기록뿐입니다.
+검증한 코드 커밋은 `e38afcbd360af2db1865ab253418034997667217`입니다. 이 절은 Java 7 전환 시점의 결과이며 이후 Helm 변경은 별도로 기록합니다.
 
 - Ubuntu 24.04.5 x64, Azul Zulu Java 7.0.352+1, Maven 3.8.8.
 - 실제 MariaDB 컨테이너 11.4.13, Connector/J 1.8.0.
@@ -103,6 +103,17 @@ EAP에서 반복 재배포할 때 클래스 로더 및 native 라이브러리 �
 | src/test/java/lab/webapp/MariaDbIntegrationTest.java | JUnit 4/Java 7/Tomcat 7로 변환, WAS별 JMX 이름 분리 |
 
 추가 파일: 이 기록, scripts/verify-war.py, AuthKdfTest.java, WarDeploymentIT.java.
+
+## Helm 차트 추가 검증 (2026-10-19)
+
+- charts/memoharbor-legacy, chart version 0.1.0, Helm 3.17.3으로 검증했습니다.
+- helm lint --strict 및 Kubernetes 1.28 기준 helm template이 통과했습니다.
+- scripts/verify-helm.py의 6개 테스트가 통과했습니다. namespace·selector 연결, 보안 기본값, 외부 Secret 참조, digest 우선순위, Route/ServiceAccount 옵션, release 격리, 잘못된 설정 거부와 패키지의 .env 제외를 확인합니다.
+- 로컬 Windows sandbox의 Python 임시 폴더 ACL 문제를 피하기 위해 테스트 실행 시 작업 폴더 안의 임시 경로 및 상속 ACL을 사용했습니다. 배포 차트 설정은 변경하지 않았습니다.
+- Helm package 생성 및 GitHub Actions 설정의 actionlint 검사를 통과했습니다.
+- 차트에는 DB 비밀번호·DB 생성·EAP 이미지 빌드·클러스터 배포 인증을 포함하지 않습니다.
+- OpenShift 4.15.10 실제 admission/설치/업그레이드/롤백과 EAP 이미지 실행은 여전히 미검증입니다.
+- 기존 YAML로 만든 같은 이름 리소스는 Helm이 자동 인수하지 않으며 새 namespace에서 설치하거나 관리자가 별도 전환해야 합니다.
 
 ## 벤더 지원과 보안
 

@@ -8,6 +8,32 @@ on:
 permissions:
   contents: read
 jobs:
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Helm 3.17.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          archive=helm-v3.17.3-linux-amd64.tar.gz
+          curl --fail --location "https://get.helm.sh/$archive" -o "$archive"
+          curl --fail --location "https://get.helm.sh/$archive.sha256sum" -o "$archive.sha256sum"
+          sha256sum --check "$archive.sha256sum"
+          tar -xzf "$archive"
+          echo "$RUNNER_TEMP/linux-amd64" >> "$GITHUB_PATH"
+      - name: Lint and verify deployment scenarios
+        run: |
+          helm lint charts/memoharbor-legacy --strict
+          python3 -m pip install PyYAML==6.0.2
+          python3 scripts/verify-helm.py
+      - name: Package chart
+        run: helm package charts/memoharbor-legacy --destination dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memoharbor-legacy-helm
+          path: dist/*.tgz
   build:
     runs-on: ubuntu-latest
     services:
@@ -55,7 +81,7 @@ jobs:
           path: target/memoharbor.war
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, helm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -64,6 +90,10 @@ jobs:
         with:
           name: memoharbor-legacy-war
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: memoharbor-legacy-helm
+          path: dist
       - name: Publish tested WAR
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,5 +101,5 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           cd dist
-          sha256sum memoharbor.war > SHA256SUMS
-          gh release create "$TAG" memoharbor.war SHA256SUMS --verify-tag --title "MemoHarbor Legacy $TAG" --notes "Java 7 / Servlet 3.0 WAR targeting JBoss EAP 6.4. See VALIDATION.md for verified scope and limitations. EAP container and OpenShift cluster deployment require separate acceptance testing."
+          sha256sum memoharbor.war *.tgz > SHA256SUMS
+          gh release create "$TAG" memoharbor.war *.tgz SHA256SUMS --verify-tag --title "MemoHarbor Legacy $TAG" --notes "Java 7 / Servlet 3.0 WAR and Helm chart targeting JBoss EAP 6.4 / OpenShift 4.15. See VALIDATION.md for verified scope and limitations. EAP container and OpenShift cluster deployment require separate acceptance testing."
