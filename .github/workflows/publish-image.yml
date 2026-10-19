@@ -18,6 +18,8 @@ permissions:
   contents: read
 jobs:
   verify:
+    permissions:
+      contents: write
     uses: ./.github/workflows/release.yml
   image:
     needs: verify
